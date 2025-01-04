@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Simple Dictionary</title>
+</head>
+<body class="bg-gray-200">
+
+<div id="app" class="flex flex-col items-center mt-10 px-4">
+    <form @submit="fetchData" class="w-full max-w-lg mx-auto relative">
+        <label for="default-search" class="mb-2 text-sm font-medium text-gray-900 sr-only dark:text-white">Search</label>
+        <div class="flex items-center relative">
+            <div class="absolute inset-y-0 start-0 flex items-center ps-3 pointer-events-none">
+                <svg class="w-4 h-4 text-gray-500 dark:text-gray-400" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 20">
+                    <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m19 19-4-4m0-7A7 7 0 1 1 1 8a7 7 0 0 1 14 0Z"/>
+                </svg>
+            </div>
+            <input
+                type="text"
+                v-model="word"
+                @focus="showHistory = true"
+                @blur="hideHistory"
+                @input="sortSearchHistory"
+                class="block w-full p-4 ps-10 text-sm text-gray-900 border border-gray-300 rounded-lg bg-gray-50 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
+                placeholder="Search..."
+                required
+            />
+            <button @click="fetchData" type="button" class="absolute right-2.5 bottom-2.5 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-4 py-2 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800">Search</button>
+        </div>
+        <!-- Dropdown for search history -->
+        <ul v-if="showHistory && filteredSearchHistory.length" class="absolute bg-white border border-gray-300 rounded-lg mt-1 w-full max-h-40 overflow-y-auto z-10">
+            <li
+                v-for="(item, index) in filteredSearchHistory"
+                :key="index"
+                @mousedown="selectHistoryItem(item)"
+                class="px-4 py-2 cursor-pointer hover:bg-gray-100"
+            >
+                [[ item ]]
+            </li>
+        </ul>
+    </form>
+
+    <div v-if="error" class="text-red-500 mb-4">
+        [[ error ]]
+    </div>
+
+    <div v-if="word_list.length" class="w-full max-w-lg mt-3">
+        <div v-for="(entry, index) in word_list" :key="index" class="bg-white p-4 mb-4 rounded shadow">
+            <h2 class="font-bold text-lg">[[ entry.word ]]</h2>
+            <p v-if="entry.phonetic" class="text-sm text-gray-600">Phonetic: [[ entry.phonetic ]]</p>
+
+            <div v-if="entry.phonetics.length">
+                <p class="font-semibold mt-2">Phonetics:</p>
+                <ul>
+                    <li v-for="(phonetic, idx) in entry.phonetics" :key="idx">
+                        <span>[[ phonetic.text ]]</span>
+                        <audio v-if="phonetic.audio" :src="phonetic.audio" controls></audio>
+                    </li>
+                </ul>
+            </div>
+
+            <div v-if="entry.meanings.length">
+                <p class="font-semibold mt-2">Meanings:</p>
+                <div v-for="(meaning, mIdx) in entry.meanings" :key="mIdx">
+                    <p><strong>[[ meaning.partOfSpeech ]]</strong></p>
+                    <ul class="list-disc pl-4">
+                        <li v-for="(definition, dIdx) in meaning.definitions" :key="dIdx">
+                            [[ definition.definition ]]
+                            <p v-if="definition.example" class="text-gray-600">Example: [[ definition.example ]]</p>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div v-if="!word_list.length && !error" class="text-gray-500">
+        Type a word and click search to get started!
+    </div>
+
+
+</div>
+
+<script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/js-cookie@3.0.5/dist/js.cookie.min.js"></script>
+
+<script>
+    const { createApp } = Vue;
+    createApp({
+        delimiters: ['[[', ']]'],
+        data() {
+            return {
+                word_list: [],
+                word: '',
+                error: '',
+                searchHistory: [],
+                filteredSearchHistory: [],
+                showHistory: false
+            };
+        },
+        mounted() {
+            this.loadSearchHistory();
+        },
+        methods: {
+            fetchData(event) {
+                if (event) event.preventDefault();
+
+                if (!this.word) {
+                    this.error = "Please enter a word.";
+                    return;
+                }
+
+                this.error = '';
+                this.word_list = [];
+                let api_url = `https://api.dictionaryapi.dev/api/v2/entries/en/${this.word}`;
+
+                axios.get(api_url)
+                    .then(response => {
+                        this.word_list = response.data;
+                        this.addToSearchHistory(this.word);
+                    })
+                    .catch(error => {
+                        this.error = "Couldn't find the word. Try something else!";
+                        console.log(error);
+                    });
+                
+
+            },
+            addToSearchHistory(word) {
+                const existingIndex = this.searchHistory.indexOf(word);
+                if (existingIndex !== -1) {
+                    this.searchHistory.splice(existingIndex, 1);
+                }
+                this.searchHistory.unshift(word);
+                this.saveSearchHistory();
+                this.sortSearchHistory(); // Update sorting after adding a new word
+            },
+            saveSearchHistory() {
+                Cookies.set('searchHistory', JSON.stringify(this.searchHistory), { expires: 7 });
+            },
+            loadSearchHistory() {
+                const history = Cookies.get('searchHistory');
+                if (history) {
+                    this.searchHistory = JSON.parse(history);
+                    this.filteredSearchHistory = [...this.searchHistory];
+                }
+            },
+            selectHistoryItem(item) {
+                this.word = item;
+                this.showHistory = false;
+            },
+            hideHistory() {
+                setTimeout(() => {
+                    this.showHistory = false;
+                }, 200);
+            },
+            sortSearchHistory() {
+                // If input is empty, reset the filtered list to the entire search history
+                if (!this.word) {
+                    this.filteredSearchHistory = [...this.searchHistory];
+                    return;
+                }
+
+                // Filter and sort the search history based on the current input
+                this.filteredSearchHistory = this.searchHistory
+                    .filter(item => item.toLowerCase().includes(this.word.toLowerCase()))
+                    .sort((a, b) => {
+                        // Prioritize items that start with the input, followed by those that include it
+                        if (a.toLowerCase().startsWith(this.word.toLowerCase())) return -1;
+                        if (b.toLowerCase().startsWith(this.word.toLowerCase())) return 1;
+                        return a.localeCompare(b);
+                    });
+            }
+        }
+    }).mount('#app');
+</script>
+
+</body>
+</html>
